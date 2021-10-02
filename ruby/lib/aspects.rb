@@ -1,6 +1,6 @@
 require_relative 'otroArchivo'
 
-class Aspects
+class Aspects#TODO JUAN hacer clase Origen. Que existan 2 tipos de origenes, Las clases y modulos que entiendan define_method y los objetos que entiendan define_singleton_method
 
   def self.on(*origenes, &bloque)
     contexto = CorredorDeCondiciones.new
@@ -19,12 +19,7 @@ class Aspects
   end
 
   def self.filtrarOrigen(origen)
-    if(origen.is_a? Module)
-      return origen
-    end
-    if(origen.class == Object)
-      return origen
-    end
+
     if(origen.class == Regexp)
       listaDeModulos = ObjectSpace.each_object(Module).filter {|modulo| origen.match?(modulo.to_s)}
       if listaDeModulos != [] then
@@ -32,6 +27,8 @@ class Aspects
       else raise ArgumentError, "origen vacío? el origen no existe"
       end
     end
+
+    return origen
   end
 
 end
@@ -72,7 +69,7 @@ class CondicionParametros
     metodo.parameters.each {|tupla_parametro| if(@expresion_regular.match?(tupla_parametro[1].to_s)) then cantidad_aciertos+=1 end}#TODO sketchy, revisar esto
     return cant_parametros_buscados == cantidad_aciertos
   end
-end
+end#TODO JUAN pasar default, mandatory, optional y regexp a clases?? que se instancien objetos. Para mi serian objetos onda regexp = proc{logica}
 
 class CondicionNegada
   attr_accessor :metodos_a_evaluar
@@ -80,10 +77,10 @@ class CondicionNegada
   def seCumple?(metodo)
     @metodos_a_evaluar.any? { |metodo_a_evaluar|  metodo_a_evaluar.to_s == metodo.name.to_s}
   end
-end
+end#TODO JUAN me dijo que seCumple? reciba la condicion anterior y al evaluarla (condicion.seCumple?) el true o false que me devuelva le haga not
 
-class CorredorDeCondiciones
-  attr_accessor :listaDeOrigenes
+class CorredorDeCondiciones#TODO JUAN hacer que el CorredorDeCondiciones reciba 1 origen. Instanciar 1 corredorDeCondiciones por cada Origen. Y que se encargue de evaluarlo.
+  attr_accessor :listaDeOrigenes#redundante
 
   def initialize(*origenes)
     @listaDeOrigenes = *origenes
@@ -94,7 +91,7 @@ class CorredorDeCondiciones
                                                          .filter {|metodo| condiciones
                                                          .all? {|condicion| condicion.seCumple?(un_origen.new.method(metodo))}}}
     return lista.flatten.uniq#TODO comment para la linea de arriba: tengo que hacerle .new porque las clases no entienden .method, ademas de que instance_methods esta en false y deberia tener en cuenta los ancestors tmb
-  end
+  end#TODO JUAN me dijo que a las clases le puedo hacer instance_method(metodo). No hace falta hacerle un_origen.new
 
   def name(regexp)
     condicion = CondicionName.new
@@ -120,7 +117,7 @@ class CorredorDeCondiciones
   end
 
   def mandatory
-    return :mandatory
+    return :mandatory#TODO JUAN pasar a objetos
   end
 
   def optional
@@ -133,15 +130,14 @@ class CorredorDeCondiciones
     lista_metodos_origenes = @listaDeOrigenes.flat_map {|origen| origen.instance_methods}.uniq
     metodos = lista_metodos_origenes - lista_metodos_que_si_cumplieron | lista_metodos_que_si_cumplieron - lista_metodos_origenes# el mayor overhead de la historia
     condicion.metodos_a_evaluar = metodos
-    return condicion
+    return condicion#TODO hacer lo de CondicionNeg
   end
 
   def transform(metodos_a_evaluar, &bloque)
     contexto = CorredorDeTransformaciones.new(@listaDeOrigenes, metodos_a_evaluar)
-    resultado = contexto.instance_eval(&bloque)
+    contexto.instance_eval(&bloque)
   end
 end
-
 
 #Ejemplo
 class Foo
@@ -182,7 +178,7 @@ class A
   end
 
   def saludar2
-    puts "Hola, juancho y talarga"
+    puts "Hola, robertito"
   end
 end
 
@@ -197,7 +193,7 @@ end
 # A.define_method(:m1, &un_bloque)
 # saludar("roberto")
 
-# meguardoelmetodo2 = A.new.method(:saludar)
+# meguardoelmetodo = A.new.method(:saludar)
 # #meguardoelmetodo2.call("roberto", "pedro")
 #
 # bloque = proc do |nombre| meguardoelmetodo = self.method(:saludar)
@@ -206,25 +202,5 @@ end
 # instancia = A.new.instance_eval(&bloque)
 # instancia.saludar("pepardo")
 #TODO FIN ejemplo para mostrar a juan
-# class A
-#   def saludar(x)
-#     "Hola, " + x
-#   end
-# end
-#
-#
-# #---------------
-# class B
-#   def m1
-#     puts "m1 viejo"
-#   end
-# end
-# objeto = B.new
-# bloque = proc{|nombre1, nombre2| "hola #{nombre1} y #{nombre2}"}
-#
-# metodo_miclase = objeto.method :m1
-# proc_original = metodo_miclase.to_proc
-# proc_original.define_singleton_method :call do
-#   puts "reemplace call estoy re loco"
-# end
-# proc_original.call
+
+#puts A.new.instance_methods.inspect

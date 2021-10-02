@@ -195,9 +195,7 @@ describe 'tp ruby' do
     Aspects.on MiClase do
       transform(where name(/m1/)) do
         before do |instance, cont, *args|
-          puts instance
-          puts cont
-          puts args.inspect
+
           @x = 10
           new_args = args.map{ |arg| arg * 10 }
           cont.call(self, nil, *new_args)
