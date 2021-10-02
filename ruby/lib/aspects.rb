@@ -1,3 +1,5 @@
+require_relative 'otroArchivo'
+
 class Aspects
 
   def self.on(*origenes, &bloque)
@@ -87,8 +89,10 @@ class CorredorDeCondiciones
     @listaDeOrigenes = *origenes
   end
 
-  def where(condicion)
-    lista = @listaDeOrigenes.map { |un_origen|  un_origen.instance_methods(false).filter {|metodo| condicion.seCumple?(un_origen.new.method(metodo))}}
+  def where(*condiciones)
+    lista = @listaDeOrigenes.map { |un_origen|  un_origen.instance_methods
+                                                         .filter {|metodo| condiciones
+                                                         .all? {|condicion| condicion.seCumple?(un_origen.new.method(metodo))}}}
     return lista.flatten.uniq#TODO comment para la linea de arriba: tengo que hacerle .new porque las clases no entienden .method, ademas de que instance_methods esta en false y deberia tener en cuenta los ancestors tmb
   end
 
@@ -126,12 +130,18 @@ class CorredorDeCondiciones
   def neg(condicion_parametro)
     condicion = CondicionNegada.new
     lista_metodos_que_si_cumplieron = where condicion_parametro
-    lista_metodos_origenes = @listaDeOrigenes.flat_map {|origen| origen.instance_methods(false)}.uniq#TODO ademas de que esto es un asco instance_methods esta en false y tendria que tener en cuenta los ancestors tmb.
+    lista_metodos_origenes = @listaDeOrigenes.flat_map {|origen| origen.instance_methods}.uniq
     metodos = lista_metodos_origenes - lista_metodos_que_si_cumplieron | lista_metodos_que_si_cumplieron - lista_metodos_origenes# el mayor overhead de la historia
     condicion.metodos_a_evaluar = metodos
     return condicion
   end
+
+  def transform(metodos_a_evaluar, &bloque)
+    contexto = CorredorDeTransformaciones.new(@listaDeOrigenes, metodos_a_evaluar)
+    resultado = contexto.instance_eval(&bloque)
+  end
 end
+
 
 #Ejemplo
 class Foo
@@ -165,3 +175,56 @@ end
 class Guerrero < Atacante
 
 end
+
+class A
+  def saludar(nombre1, nombre2)
+    puts "Hola, #{nombre1} y #{nombre2}"
+  end
+
+  def saludar2
+    puts "Hola, juancho y talarga"
+  end
+end
+
+# A.define_method(:saludar) do |nombre1, nombre2|
+#   puts "Hola, #{nombre1} y #{nombre2}"
+# end
+#A.new.saludar("tomas", "carlos")
+#un_bloque = proc { |*args| "Los argumentos que me pasaron son: #{args}" }
+
+#TODO ejemplo para mostrar a juan
+
+# A.define_method(:m1, &un_bloque)
+# saludar("roberto")
+
+# meguardoelmetodo2 = A.new.method(:saludar)
+# #meguardoelmetodo2.call("roberto", "pedro")
+#
+# bloque = proc do |nombre| meguardoelmetodo = self.method(:saludar)
+# self.define_method(:saludar, meguardoelmetodo.call(nombre))
+# end
+# instancia = A.new.instance_eval(&bloque)
+# instancia.saludar("pepardo")
+#TODO FIN ejemplo para mostrar a juan
+# class A
+#   def saludar(x)
+#     "Hola, " + x
+#   end
+# end
+#
+#
+# #---------------
+# class B
+#   def m1
+#     puts "m1 viejo"
+#   end
+# end
+# objeto = B.new
+# bloque = proc{|nombre1, nombre2| "hola #{nombre1} y #{nombre2}"}
+#
+# metodo_miclase = objeto.method :m1
+# proc_original = metodo_miclase.to_proc
+# proc_original.define_singleton_method :call do
+#   puts "reemplace call estoy re loco"
+# end
+# proc_original.call
