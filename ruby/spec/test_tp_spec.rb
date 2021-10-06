@@ -18,14 +18,19 @@ describe 'tp ruby' do
     expect(foobar.hola).to eq "hola"
   end
 
-  xit 'Se debe de poder definir un aspecto para un objeto' do
-    miObjeto = Object.new
-    Aspects.on miObjeto do
-      def hola
-        "hola2"
+  it 'Se debe de poder definir un aspecto para un objeto' do
+    class Pepito
+      def foo
+      end
+      def bar
       end
     end
-    expect(miObjeto.hola).to eq "hola2"
+    miObjeto = Pepito.new
+    metodos = Aspects.on miObjeto do
+      where name(/foo/)
+
+    end
+    expect(metodos).to eq [:foo]
   end
 
   it 'El framework no debe permitir la definición de un Origen vacío' do
@@ -81,7 +86,7 @@ describe 'tp ruby' do
       # array con los métodos foo y bar
     end
 
-    expect(metodos).to eq [:foo, :bar]
+    expect(metodos).to match_array [:foo, :bar]
   end
 
   it 'probando has_parameters3' do
@@ -116,7 +121,7 @@ describe 'tp ruby' do
       where name(/foo\d/), neg(has_parameters(1))
       # array con los métodos foo2 y foo3
     end
-    expect(metodos).to eq [:foo2, :foo3]
+    expect(metodos).to match_array [:foo2, :foo3]
   end
 
   xit 'Transformacion con inyeccion de parametro' do
