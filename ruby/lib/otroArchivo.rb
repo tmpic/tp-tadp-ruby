@@ -1,68 +1,106 @@
-
-class CorredorDeTransformaciones#TODO JUAN hacer que el CorredorDeTransformaciones reciba 1 origen y 1 metodo_a_evaluar. Instanciar un CorredorDeTransformaciones por cada par(origen y metodo) y que lo evalue
-  attr_accessor :listaDeOrigenes, :metodos_a_evaluar
-
-  def initialize(listaDeOrigenes, metodos_a_evaluar)
-    @listaDeOrigenes = listaDeOrigenes
-    @metodos_a_evaluar = metodos_a_evaluar
+class BuscadorDeTuplas
+  def self.buscarTupla(metodo_original, key, hash)
+    tupla = []
+    parametros = metodo_original.parameters
+    indice = parametros.find_index { |tupla| tupla[1].to_s == key.to_s }
+    if(hash.class == Proc) then
+      resultado_bloque = 1
+      tupla.append indice, resultado_bloque
+    else
+      tupla.append indice, hash[key]
+    end
+    return tupla
   end
 
-  def inject(*parametros_a_modificar)
-    #TODO JUAN lo que me dijo es que unbindee el metodo(hacer algo parecido con after). Y se puede hacer *["roberto", "carlos"] que se traduce en metodo(p1: "roberto", p2: "carlos")
+  def self.ejecutar_bloque(objeto_receptor, selector, parametro_original, &bloque)
+    objeto_receptor.instance_exec(objeto_receptor, selector, parametro_original, &bloque)
+  end
+end
+
+class Transformador
+  attr_accessor :metodo_a_ejecutar, :listaDeTuplasIndiceValor_a_ejecutar#TODO en lugar de tener partes del inject, podria tener el inject entero y hacerlo polimorfico
+
+  def initialize(metodo_a_ejecutar)
+    @metodo_a_ejecutar = metodo_a_ejecutar
+  end
+
+  def transformar(origen_a_evaluar, metodo_a_evaluar)#TODO juan me dijo que el codigo es poco extensible para aceptar una nueva transformacion, que haga objetos inject, exista una lista de transformaciones y que se les pueda definir un orden antes de ejecutar.(inject siempre va al final)
+    metodo_a_ejecutar_posta = @metodo_a_ejecutar
+    listaDeTuplasIndiceValor_a_ejecutar_posta = @listaDeTuplasIndiceValor_a_ejecutar
+
+    blockaso = proc do |*args|
+      if(listaDeTuplasIndiceValor_a_ejecutar_posta != nil) then
+        listaDeTuplasIndiceValor_a_ejecutar_posta.each do |indice, valor|
+          if(valor.class == Proc) then
+            parametro_anterior = args[indice]
+            resultado = BuscadorDeTuplas.ejecutar_bloque(self, metodo_a_evaluar.to_s, parametro_anterior, &valor)
+            args[indice] = resultado
+          else
+            args[indice] = valor
+          end
+        end
+      end
+
+      if(metodo_a_ejecutar_posta.is_a? UnboundMethod) then
+        metodo_a_ejecutar_posta = metodo_a_ejecutar_posta.bind(self).to_proc
+      end
+
+      self.instance_exec(*args, &metodo_a_ejecutar_posta)
+    end
+
+    origen_a_evaluar.definir_metodo(metodo_a_evaluar, &blockaso)
+  end
+end
+
+class CorredorDeTransformaciones
+  attr_accessor :origen_a_evaluar, :metodo_a_evaluar, :transformador
+
+  def initialize(origen_a_evaluar, metodo_a_evaluar)
+    @origen_a_evaluar = origen_a_evaluar
+    @metodo_a_evaluar = metodo_a_evaluar
+    @transformador = Transformador.new(origen_a_evaluar.obtener_metodo(metodo_a_evaluar))
+  end
+
+  def transformar(origen_a_evaluar, metodo_a_evaluar)
+    @transformador.transformar(origen_a_evaluar, metodo_a_evaluar)
+  end
+
+  def inject(hash)#TODO hacer objeto
+    metodo_original = @origen_a_evaluar.obtener_metodo(@metodo_a_evaluar)
+    @transformador.listaDeTuplasIndiceValor_a_ejecutar = hash.keys.map { |key| BuscadorDeTuplas.buscarTupla(metodo_original, key, hash)}
   end
 
   def redirect_to(objeto)
-    metodos_del_objeto_en_simbolos = @metodos_a_evaluar.map { |metodo_buscado| objeto.class.instance_methods.find {|metodo_del_objeto| metodo_del_objeto == metodo_buscado} }
-    metodos_del_objeto = metodos_del_objeto_en_simbolos.map { |metodo_sym|  objeto.method metodo_sym}
-    metodos_del_objeto.each { |metodo_del_objeto| @listaDeOrigenes.each { |origen| origen.define_method(metodo_del_objeto.original_name, metodo_del_objeto.to_proc) }}
-  end#TODO no entiendo porque no me tira el error de que estoy tratando de bindearlo un metodo a otra clase.
-  #origen.class.send(:define_method, metodo_del_objeto.original_name, metodo_del_objeto.to_proc)
-  # --ambas versiones funcionan sin el .class
-  # old ver: origen.class.define_method(metodo_del_objeto.original_name, metodo_del_objeto.to_proc)
-  #TODO JUAN esto se tendria que modificar en base a los cambios con CorredorDeCondiciones y CorredorDeTransformaciones
+    @transformador.metodo_a_ejecutar = objeto.method(@metodo_a_evaluar)
+  end
 
   def before(&bloque)
-    contexto = CorredorDeLogica.new(@listaDeOrigenes, @metodos_a_evaluar)
-    #@listaDeOrigenes.each {|origen| origen.instance_exec(&bloque)}
-    #@listaDeOrigenes.each {|origen| @metodos_a_evaluar.each { |metodo| if origen.new.respond_to?(metodo) then  origen.define_method(metodo, &bloque) end}}
-    #
-    metodo_miclase = @listaDeOrigenes[0].new.method(:m1)
-    proc_original = metodo_miclase.to_proc
-    # proc_original.define_singleton_method :call do
-    #   puts "reemplace call estoy re loco"
-    # end
-    # puts proc_original
+    metodo_original = @origen_a_evaluar.obtener_metodo(@metodo_a_evaluar)
 
     wrapped_block = proc do |*args|
-      self.instance_exec(self, proc_original, *args, &bloque)#TODO JUAN, me dijo que lo haga distinto al enunciado, que reciba los mismos parametros que el original
+      metodo_original = metodo_original.bind(self)
+      self.instance_exec(self, metodo_original, *args, &bloque)
     end
 
-    @listaDeOrigenes.each {|origen| @metodos_a_evaluar.each { |metodo| if origen.new.respond_to?(metodo) then  origen.define_method(metodo, &wrapped_block) end}}
+    @transformador.metodo_a_ejecutar = wrapped_block
   end
 
   def instead_of(&bloque)
-    params_metodo_original = @listaDeOrigenes[0].new.method(:m3).arity
-
     wrapped_block = proc do |*args|
       self.instance_exec(self, *args, &bloque)
     end
 
-    @listaDeOrigenes.each {|origen| @metodos_a_evaluar.each { |metodo| if origen.new.respond_to?(metodo) then  origen.define_method(metodo, &wrapped_block) end}}
-    #TODO JUAN esto parece estar bien, cambiaria en base a : cambios con CorredorDeCondiciones y CorredorDeTransformaciones
+    @transformador.metodo_a_ejecutar = wrapped_block
   end
 
   def after(&bloque)
-    metodo_original = @listaDeOrigenes[0].new.method(:m2).unbind
-    params_metodo_original = metodo_original.arity
+    metodo_original = @origen_a_evaluar.obtener_metodo(@metodo_a_evaluar)
 
     wrapped_block = proc do |*args|
-      metodo_original.bind(self).call(10)
+      metodo_original.bind(self).call(*args)
       self.instance_exec(self, *args, &bloque)
     end
 
-    @listaDeOrigenes.each {|origen| @metodos_a_evaluar.each { |metodo| if origen.new.respond_to?(metodo) then
-                                                                         origen.define_method(metodo, &wrapped_block)
-                                                                       end}}
-    #TODO JUAN esto parece estar bien, cambiaria en base a : cambios con CorredorDeCondiciones y CorredorDeTransformaciones
+    @transformador.metodo_a_ejecutar = wrapped_block
   end
 end

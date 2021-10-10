@@ -1,6 +1,6 @@
 require_relative 'otroArchivo'
 
-class Origen
+class Origen#TODO convertir en 2 tipos de origenes, OrigenObjeto y OrigenModulo
   attr_accessor :tipo, :origen
 
   def definir_metodo(simbolo, &bloque)
@@ -21,9 +21,21 @@ class Origen
 
   def obtener_metodo(symbol)
     if(@tipo == :objeto) then
-      @origen.method(symbol)
+      @origen.method(symbol).unbind
     else
       @origen.instance_method(symbol)
+    end
+  end
+
+  def responde_a?(symbol)
+    begin
+      if(@tipo == :objeto) then
+        @origen.method(symbol)
+      else
+        @origen.instance_method(symbol)
+      end
+    rescue NameError
+      return nil
     end
   end
 end
@@ -66,7 +78,7 @@ class Aspects
     return convertirEnOrigen(objeto)
   end
 
-  def self.convertirEnOrigen(objeto)
+  def self.convertirEnOrigen(objeto)#TODO Aca por la condicion se debe generar OrigenObjeto o OrigenModulo
     origen = Origen.new
     origen.origen = objeto
     if(objeto.is_a? Module) then
@@ -85,38 +97,7 @@ class CondicionName
   end
 end
 
-class CondicionParametros
-  attr_accessor :cant_parametros_buscados, :tipo_actual, :expresion_regular
-
-  def seCumple?(metodo)
-    resultado = send(@tipo_actual, metodo)
-    return resultado
-  end
-
-  def default(metodo)
-    metodo.parameters.length == @cant_parametros_buscados
-  end
-
-  def mandatory(metodo)
-    cantidad_aciertos = 0
-    metodo.parameters.each {|tupla_parametro| if(tupla_parametro[0].to_s == :req.to_s) then cantidad_aciertos+=1 end}
-    return cant_parametros_buscados == cantidad_aciertos
-  end
-
-  def optional(metodo)#TODO refactorizar esta repeticion de logica.
-    cantidad_aciertos = 0
-    metodo.parameters.each {|tupla_parametro| if(tupla_parametro[0].to_s == :opt.to_s) then cantidad_aciertos+=1 end}
-    return cant_parametros_buscados == cantidad_aciertos
-  end
-
-  def regexp(metodo)
-    cantidad_aciertos = 0
-    metodo.parameters.each {|tupla_parametro| if(@expresion_regular.match?(tupla_parametro[1].to_s)) then cantidad_aciertos+=1 end}#TODO sketchy, revisar esto
-    return cant_parametros_buscados == cantidad_aciertos
-  end
-end#TODO JUAN pasar default, mandatory, optional y regexp a clases?? que se instancien objetos. Para mi serian objetos onda regexp = proc{logica}
-
-class Has_parametersOptional
+class Has_parametersOptional#TODO eliminar logica repetida, hacer que la condicion y la accion se pasen por parametro, ademas de usar .COUNT
   attr_accessor :cant_parametros_buscados
 
   def seCumple?(metodo)
@@ -132,7 +113,7 @@ class Has_parametersMandatory
   def seCumple?(metodo)
     cantidad_aciertos = 0
     metodo.parameters.each {|tupla_parametro| if(tupla_parametro[0].to_s == :req.to_s) then cantidad_aciertos+=1 end}
-    return cant_parametros_buscados == cantidad_aciertos
+    return cant_parametros_buscados == cantidad_aciertos#todo count
   end
 end
 
@@ -190,7 +171,7 @@ class CorredorDeCondiciones
 
   def has_parameters(cant_parametros_buscados, tipo = default)
 
-    if(tipo.class == Regexp) then
+    if(tipo.is_a? Regexp) then
       Has_parametersRegexp.new(cant_parametros_buscados, tipo)#recordar que aca adentro tipo es la regexp
     else
       tipo.cant_parametros_buscados = cant_parametros_buscados
@@ -215,8 +196,14 @@ class CorredorDeCondiciones
   end
 
   def transform(metodos_a_evaluar, &bloque)
-    contexto = CorredorDeTransformaciones.new(@listaDeOrigenes, metodos_a_evaluar)
+    resultado = metodos_a_evaluar.map { |metodo_a_evaluar| correrTransformacion(@origenAEvaluar, metodo_a_evaluar, &bloque)}
+    resultado.flatten.uniq
+  end
+
+  def correrTransformacion(origen, metodo_a_evaluar, &bloque)
+    contexto = CorredorDeTransformaciones.new(origen, metodo_a_evaluar)
     contexto.instance_eval(&bloque)
+    contexto.transformar(origen, metodo_a_evaluar)
   end
 end
 
@@ -251,14 +238,4 @@ end
 
 class Guerrero < Atacante
 
-end
-
-class A
-  def saludar(nombre1, nombre2)
-    puts "Hola, #{nombre1} y #{nombre2}"
-  end
-
-  def saludar2
-    puts "Hola, robertito"
-  end
 end

@@ -2,22 +2,6 @@ require 'rspec'
 require_relative '../lib/aspects'
 
 describe 'tp ruby' do
-  xit 'Aspects con Regexp' do
-    Aspects.on MiClase, /^Foo.*/, /.*bar/ do
-      def hola
-        "hola"
-      end
-    end
-
-    miclase = MiClase.new
-    foo = Foo.new
-    foobar = Foobar.new
-
-    expect(miclase.hola).to eq "hola"
-    expect(foo.hola).to eq "hola"
-    expect(foobar.hola).to eq "hola"
-  end
-
   it 'Se debe de poder definir un aspecto para un objeto' do
     class Pepito
       def foo
@@ -104,7 +88,12 @@ describe 'tp ruby' do
       where has_parameters(1, /param.*/)
       # array con el método bar
     end
+    metodos2 = Aspects.on MiClase4 do
+      where has_parameters(2, /param.*/)
+      # array con el método bar
+    end
     expect(metodos).to eq [:bar]
+    expect(metodos2).to eq [:foo]
   end
 
   it 'Negación Esta condición recibe otras condiciones por parámetro y se cumple cuando ninguna de ellas se cumple.' do
@@ -124,26 +113,23 @@ describe 'tp ruby' do
     expect(metodos).to match_array [:foo2, :foo3]
   end
 
-  xit 'Transformacion con inyeccion de parametro' do
+  it 'Transformacion con inyeccion de parametro' do
     class MiClase6
       def hace_algo(p1, p2)
         p1 + '-' + p2
       end
-      def hace_otra_cosa(p2, ppp)
-        p2 + ':' + ppp
-      end
     end
 
-    Aspects.on MiClase6 do
-      transform(where has_parameters(2, /p2/)) do
+    metodos = Aspects.on MiClase6 do
+      transform(where has_parameters(2, /p.*/)) do
         inject(p2: 'bar')
       end
     end
 
     instancia = MiClase6.new
-    #expect(instancia.hace_algo("foo")).to eq "foo-bar"
+    expect(instancia.hace_algo("foo")).to eq "foo-bar"
     # "foo-bar"
-
+    # expect(metodos).to eq [:hace_algo]
 
   end
 
@@ -166,16 +152,16 @@ describe 'tp ruby' do
       end
     end
 
-    Aspects.on A, C do
+    Aspects.on A do
       transform(where name(/saludar/)) do
         redirect_to(B.new)
       end
     end
 
     respuesta_instancia_A = A.new.saludar("Mundo")
-    respuesta_instancia_C = C.new.saludar("Mundo")
+    # respuesta_instancia_C = C.new.saludar("Mundo")
     expect(respuesta_instancia_A).to eq "Adiosín, Mundo"
-    expect(respuesta_instancia_C).to eq "Adiosín, Mundo"
+    # expect(respuesta_instancia_C).to eq "Adiosín, Mundo"
     #"Adiosín, Mundo"
 
   end
@@ -203,7 +189,7 @@ describe 'tp ruby' do
 
           @x = 10
           new_args = args.map{ |arg| arg * 10 }
-          cont.call(self, nil, *new_args)
+          cont.call(*new_args)
 
         end
       end
@@ -215,7 +201,7 @@ describe 'tp ruby' do
 
   end
 
-  xit 'Inyeccion de logica2' do
+  it 'Inyeccion de logica2' do
     class MiClase
       attr_accessor :x
 
@@ -235,9 +221,6 @@ describe 'tp ruby' do
     Aspects.on MiClase do
       transform(where name(/m3/)) do
         instead_of do |instance, *args|
-          puts instance
-          puts *args.inspect
-          puts self
           @x = 123
         end
       end
@@ -247,7 +230,7 @@ describe 'tp ruby' do
     expect(instancia.m3(48)).to eq 123
   end
 
-  xit 'Inyeccion de logica3' do
+  it 'Inyeccion de logica3' do
     class MiClasarda
       attr_accessor :x
 
@@ -296,11 +279,6 @@ describe 'tp ruby' do
     Aspects.on MiClasarda2 do
       transform(where name(/m2/)) do
         after do |instance, *args|
-          puts self
-          puts instance
-          puts @x
-          puts args.inspect
-
           if @x > 100
             2 * @x
           else
@@ -312,5 +290,152 @@ describe 'tp ruby' do
 
     instancia = MiClasarda2.new
     expect(instancia.m2(10)).to eq 10
+  end
+
+  it 'debe ser posible aplicar transformaciones sucesivas' do
+    class A
+      def saludar(x)
+        "Hola, " + x
+      end
+    end
+
+    class B
+      def saludar(x)
+        "Adiosín, " + x
+      end
+    end
+
+    Aspects.on A do
+      transform(where name(/saludar/)) do
+        inject(x: "Tarola")
+        redirect_to(B.new)
+      end
+    end
+
+    resultado = A.new.saludar("Mundo")
+    expect(resultado).to eq "Adiosín, Tarola"
+    # "Hola, Tarola"
+
+  end
+
+  it 'Custom' do
+    class MiClaseCustom
+      attr_accessor :x
+
+      def m1(x, y)
+        x + y
+      end
+
+      def m2(x)
+        @x = x
+      end
+
+      def m3(x)
+        @x = x
+      end
+    end
+
+    Aspects.on MiClaseCustom do
+      transform(where name(/m3/)) do
+        instead_of do |instance, *args|
+          @x = 123
+        end
+        inject(x: 55)
+      end
+    end
+
+    instancia = MiClaseCustom.new
+    expect(instancia.m3(48)).to eq 123
+  end
+
+  it 'after Custom' do
+    class BCustom
+      def m2(x)
+        x + 10
+      end
+    end
+    class MiClasaAfterCustom
+      attr_accessor :x
+
+      def m1(x, y)
+        x + y
+      end
+
+      def m2(x)
+        @x = x
+      end
+
+      def m3(x)
+        @x = x
+      end
+    end
+
+    Aspects.on MiClasaAfterCustom do
+      transform(where name(/m2/)) do
+        after do |instance, *args|
+          if @x > 100
+            2 * @x
+          else
+            @x
+          end
+        end
+        redirect_to(BCustom.new)
+      end
+    end
+
+    instancia = MiClasaAfterCustom.new
+    expect(instancia.m2(10)).to eq 20
+  end
+
+  it 'before Custom' do
+    class MiClaseBeforeCustom
+      attr_accessor :x
+
+      def m1(x, y)
+        x + y
+      end
+
+      def m2(x)
+        @x = x
+      end
+
+      def m3(x)
+        @x = x
+      end
+    end
+
+    Aspects.on MiClaseBeforeCustom do
+      transform(where name(/m1/)) do
+
+        before do |instance, cont, *args|
+          @x = 10
+          new_args = args.map{ |arg| arg * 10 }
+          cont.call(*new_args)
+        end
+        inject(x: 2)
+      end
+    end
+
+    instancia = MiClaseBeforeCustom.new
+    expect(instancia.m1(1, 2)).to eq 40
+  end
+
+  it 'inject con proc' do
+    class MiClaseConProc
+      def hace_algo(p1, p2)
+        p1 + "-" + p2
+      end
+    end
+
+    Aspects.on MiClaseConProc do
+      transform(where has_parameters(1, /p2/)) do
+        inject(p2: proc{ |receptor, mensaje, arg_anterior|
+          "bar(#{mensaje}->#{arg_anterior})"
+        })
+      end
+    end
+
+    resultado = MiClaseConProc.new.hace_algo('foo', 'foo')
+    expect(resultado).to eq 'foo-bar(hace_algo->foo)'
   end
 end
