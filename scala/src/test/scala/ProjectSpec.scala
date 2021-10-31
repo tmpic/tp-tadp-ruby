@@ -10,6 +10,19 @@ class ProjectSpec extends AnyFreeSpec {
         Prueba.materia shouldBe "tadp"
       }
     }
+    "heroes" - {
+      "si le subo un nivel a un guerrero deberia de aumentar en 1" in {
+        val estadistica = new Estadistica(10,10,10,10)
+        val trabajo = Guerrero()
+        val guerrero = Heroe(trabajo, estadistica)
+
+        val nuevoGuerrero = LeveleadorDeHeroes.subirNivel(guerrero)
+
+        nuevoGuerrero.estadistica.nivel shouldBe 11
+
+
+      }
+    }
   }
 
 }
