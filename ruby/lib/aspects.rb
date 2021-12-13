@@ -47,20 +47,28 @@ class OrigenObjeto
     @origen.define_singleton_method(simbolo, &bloque)
   end
 
-  def mostrar_metodos()
-    @origen.methods | private_methods
-  end
-
   def obtener_metodo(symbol)
     @origen.method(symbol).unbind
   end
 
-  def metodo_privado_definido?(metodo_parametro)
-    @origen.private_methods(true).any? {|metodo| metodo.name.to_s == metodo_parametro.to_s}
+  def mostrar_metodos()
+    metodos_publicos | metodos_privados
+  end
+
+  def metodos_publicos
+    @origen.methods
+  end
+
+  def metodos_privados
+    @origen.private_methods
   end
 
   def metodo_publico_definido?(metodo_parametro)
-    @origen.public_methods(true).any? {|metodo| metodo.name.to_s == metodo_parametro.to_s}
+    metodos_publicos.include?(metodo_parametro)
+  end
+
+  def metodo_privado_definido?(metodo_parametro)
+    metodos_privados.include?(metodo_parametro)
   end
 
   def responde_a?(symbol)
