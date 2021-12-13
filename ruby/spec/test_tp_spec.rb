@@ -438,4 +438,105 @@ describe 'tp ruby' do
     resultado = MiClaseConProc.new.hace_algo('foo', 'foo')
     expect(resultado).to eq 'foo-bar(hace_algo->foo)'
   end
+
+  it 'Verificando que se ordenan las transformaciones' do
+    class Ordenando
+      attr_accessor :x
+
+      def m1(x, y)
+        x + y
+      end
+
+      def m2(x)
+        @x = x
+      end
+
+      def m3(x)
+        @x = x
+      end
+    end
+
+    Aspects.on Ordenando do
+      transform(where name(/m3/)) do
+        inject(x: 55)
+        instead_of do |instance, *args|
+          @x = 123
+        end
+      end
+    end
+
+    instancia = Ordenando.new
+    expect(instancia.m3(48)).to eq 123
+  end
+  it 'is_public tp individual' do
+    class MiClaseIs_public
+      def foo
+      end
+
+      private
+
+      def bar
+      end
+    end
+
+    resultado = Aspects.on MiClaseIs_public do
+      where name(/bar/), is_public
+      # array vacío
+    end
+    expect(resultado).to eq []
+  end
+
+  it 'is_private tp individual' do
+    class MiClaseIs_private
+      def foo
+      end
+
+      private
+
+      def bar
+      end
+    end
+
+    resultado2 = Aspects.on MiClaseIs_private do
+      where name(/bar/), is_private
+      # array con el método bar
+    end
+    expect(resultado2).to eq [:bar]
+  end
+
+  it 'solo los publicos debe traer is_public tp individual' do
+    class MiClaseIs_public2
+      def foo
+      end
+
+      private
+
+      def bar
+      end
+    end
+
+    resultado2 = Aspects.on MiClaseIs_public2 do
+      where name(/foo/), is_private
+      # array con el método bar
+    end
+    expect(resultado2).to eq []
+  end
+
+  it 'solo los privados debe traer is_private tp individual' do
+    class MiClaseIs_public2
+      def foo
+      end
+
+      private
+
+      def bar
+      end
+    end
+
+    resultado2 = Aspects.on MiClaseIs_public2 do
+      where name(/foo/), is_private
+      # array con el método bar
+    end
+    expect(resultado2).to eq []
+  end
 end

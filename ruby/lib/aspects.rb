@@ -1,39 +1,71 @@
-require_relative 'otroArchivo'
+require_relative 'transformaciones'
 
-class Origen#TODO convertir en 2 tipos de origenes, OrigenObjeto y OrigenModulo
-  attr_accessor :tipo, :origen
+class OrigenModulo
+  attr_accessor :origen
+
+  def initialize(objeto)
+    @origen = objeto
+  end
 
   def definir_metodo(simbolo, &bloque)
-    if(@tipo == :objeto) then
-      @origen.define_singleton_method(simbolo, &bloque)
-    else
-      @origen.define_method(simbolo, &bloque)
-    end
+    @origen.define_method(simbolo, &bloque)
   end
 
   def mostrar_metodos()
-    if(@tipo == :objeto) then
-      @origen.methods
-    else
-      @origen.instance_methods
-    end
+    @origen.instance_methods | @origen.private_instance_methods
   end
 
   def obtener_metodo(symbol)
-    if(@tipo == :objeto) then
-      @origen.method(symbol).unbind
-    else
       @origen.instance_method(symbol)
-    end
+  end
+
+  def metodo_privado_definido?(metodo)
+    @origen.private_method_defined? metodo.name
+  end
+
+  def metodo_publico_definido?(metodo)
+    @origen.public_method_defined? metodo.name
   end
 
   def responde_a?(symbol)
     begin
-      if(@tipo == :objeto) then
-        @origen.method(symbol)
-      else
-        @origen.instance_method(symbol)
-      end
+      @origen.instance_method(symbol)
+    rescue NameError
+      return nil
+    end
+  end
+end
+
+class OrigenObjeto
+  attr_accessor :origen
+
+  def initialize(objeto)
+    @origen = objeto
+  end
+
+  def definir_metodo(simbolo, &bloque)
+    @origen.define_singleton_method(simbolo, &bloque)
+  end
+
+  def mostrar_metodos()
+    @origen.methods | private_methods
+  end
+
+  def obtener_metodo(symbol)
+    @origen.method(symbol).unbind
+  end
+
+  def metodo_privado_definido?(metodo_parametro)
+    @origen.private_methods(true).any? {|metodo| metodo.name.to_s == metodo_parametro.to_s}
+  end
+
+  def metodo_publico_definido?(metodo_parametro)
+    @origen.public_methods(true).any? {|metodo| metodo.name.to_s == metodo_parametro.to_s}
+  end
+
+  def responde_a?(symbol)
+    begin
+      @origen.method(symbol)
     rescue NameError
       return nil
     end
@@ -78,65 +110,69 @@ class Aspects
     return convertirEnOrigen(objeto)
   end
 
-  def self.convertirEnOrigen(objeto)#TODO Aca por la condicion se debe generar OrigenObjeto o OrigenModulo
-    origen = Origen.new
-    origen.origen = objeto
+  def self.convertirEnOrigen(objeto)
+
     if(objeto.is_a? Module) then
-      origen.tipo = :modulo
+      origen = OrigenModulo.new(objeto)
     else
-      origen.tipo = :objeto
+      origen = OrigenObjeto.new(objeto)
     end
+
     return origen
   end
 end
 
 class CondicionName
   attr_accessor :regex
-  def seCumple? metodo
+  def seCumple?(origen_a_evaluar, metodo)
     @regex.match? metodo.name.to_s
   end
 end
 
-class Has_parametersOptional#TODO eliminar logica repetida, hacer que la condicion y la accion se pasen por parametro, ademas de usar .COUNT
-  attr_accessor :cant_parametros_buscados
+class ChequeadorDeCondiciones
+  attr_accessor :condicion, :cant_parametros_buscados
 
-  def seCumple?(metodo)
-    cantidad_aciertos = 0
-    metodo.parameters.each {|tupla_parametro| if(tupla_parametro[0].to_s == :opt.to_s) then cantidad_aciertos+=1 end}
-    return cant_parametros_buscados == cantidad_aciertos
+  def initialize(condicion, cant_parametros_buscados)
+    @condicion = condicion
+    @cant_parametros_buscados = cant_parametros_buscados
+  end
+
+  def seCumple?(origen_a_evaluar, metodo)
+    cantidad_aciertos = metodo.parameters.count {|tupla_parametro| @condicion.seCumple?(origen_a_evaluar, tupla_parametro)}
+    return @cant_parametros_buscados == cantidad_aciertos
+  end
+end
+
+class Has_parametersOptional
+
+  def seCumple?(origen_a_evaluar, tupla_parametro)
+    tupla_parametro[0].to_s == :opt.to_s
   end
 end
 
 class Has_parametersMandatory
-  attr_accessor :cant_parametros_buscados
 
-  def seCumple?(metodo)
-    cantidad_aciertos = 0
-    metodo.parameters.each {|tupla_parametro| if(tupla_parametro[0].to_s == :req.to_s) then cantidad_aciertos+=1 end}
-    return cant_parametros_buscados == cantidad_aciertos#todo count
+  def seCumple?(origen_a_evaluar, tupla_parametro)
+    tupla_parametro[0].to_s == :req.to_s
   end
 end
 
 class Has_parametersDefault
-  attr_accessor :cant_parametros_buscados
 
-  def seCumple?(metodo)
-    metodo.parameters.length == @cant_parametros_buscados
+  def seCumple?(origen_a_evaluar, tupla_parametro)
+    true
   end
 end
 
 class Has_parametersRegexp
-  attr_accessor :cant_parametros_buscados, :expresion_regular
+  attr_accessor :expresion_regular
 
-  def initialize(cant_parametros_buscados, regexp)
-    @cant_parametros_buscados = cant_parametros_buscados
+  def initialize( regexp)
     @expresion_regular = regexp
   end
 
-  def seCumple?(metodo)
-    cantidad_aciertos = 0
-    metodo.parameters.each {|tupla_parametro| if(@expresion_regular.match?(tupla_parametro[1].to_s)) then cantidad_aciertos+=1 end}
-    return cant_parametros_buscados == cantidad_aciertos
+  def seCumple?(origen_a_evaluar, tupla_parametro)
+    @expresion_regular.match?(tupla_parametro[1].to_s)
   end
 end
 
@@ -147,8 +183,22 @@ class CondicionNegada
     @condicion_a_negar = condicion_a_negar
   end
 
-  def seCumple?(metodo)
-    not @condicion_a_negar.seCumple?(metodo)
+  def seCumple?(origen_a_evaluar, metodo)
+    not @condicion_a_negar.seCumple?(origen_a_evaluar, metodo)
+  end
+end
+
+class CondicionIs_private
+
+  def seCumple?(origen_a_evaluar, metodo_parametro)
+    origen_a_evaluar.metodo_privado_definido? metodo_parametro
+  end
+end
+
+class CondicionIs_public
+
+  def seCumple?(origen_a_evaluar, metodo_parametro)
+    origen_a_evaluar.metodo_publico_definido? metodo_parametro
   end
 end
 
@@ -160,7 +210,7 @@ class CorredorDeCondiciones
   end
 
   def where(*condiciones)
-    @origenAEvaluar.mostrar_metodos.filter {|metodo| condiciones.all? {|condicion| condicion.seCumple?(@origenAEvaluar.obtener_metodo(metodo))}}
+    @origenAEvaluar.mostrar_metodos.filter {|metodo| condiciones.all? {|condicion| condicion.seCumple?(@origenAEvaluar, @origenAEvaluar.obtener_metodo(metodo))}}
   end
 
   def name(regexp)
@@ -169,13 +219,20 @@ class CorredorDeCondiciones
     return condicion
   end
 
+  def is_private
+    CondicionIs_private.new
+  end
+
+  def is_public
+    CondicionIs_public.new
+  end
+
   def has_parameters(cant_parametros_buscados, tipo = default)
 
     if(tipo.is_a? Regexp) then
-      Has_parametersRegexp.new(cant_parametros_buscados, tipo)#recordar que aca adentro tipo es la regexp
+      ChequeadorDeCondiciones.new(Has_parametersRegexp.new(tipo), cant_parametros_buscados)#recordar que aca adentro tipo es la regexp
     else
-      tipo.cant_parametros_buscados = cant_parametros_buscados
-      return tipo
+      ChequeadorDeCondiciones.new(tipo, cant_parametros_buscados)
     end
   end
 
@@ -205,37 +262,4 @@ class CorredorDeCondiciones
     contexto.instance_eval(&bloque)
     contexto.transformar(origen, metodo_a_evaluar)
   end
-end
-
-#Ejemplo
-class Foo
-end
-
-class Foobar
-end
-
-class MiClase
-  def foo
-  end
-
-  def bar
-  end
-end
-
-module UnModulo
-end
-
-class UnaClase
-  include UnModulo
-end
-
-class UnaClase2
-end
-
-class Atacante
-
-end
-
-class Guerrero < Atacante
-
 end
